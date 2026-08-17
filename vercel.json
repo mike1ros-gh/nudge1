@@ -1,0 +1,12 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/refresh-tokens",
+      "schedule": "0 5 * * *"
+    },
+    {
+      "path": "/api/cron/attach-next-reel",
+      "schedule": "0 6 * * *"
+    }
+  ]
+}

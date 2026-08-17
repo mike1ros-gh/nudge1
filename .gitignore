@@ -1,0 +1,54 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# env files (can opt-in for committing if needed)
+.env*
+!.env.example
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+/app/generated/prisma
+
+# graphify local knowledge-graph tooling output
+/graphify-out
+
+# mac-app build output and per-install config (run mac-app/build.sh to
+# regenerate — site-url.txt is your own deployed URL, never someone else's)
+/mac-app/Nudge1.app
+/mac-app/AppIcon.iconset
+/mac-app/AppIcon.icns
+/mac-app/site-url.txt

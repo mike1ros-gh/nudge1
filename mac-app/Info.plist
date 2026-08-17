@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Please don't rename "Nudge1" here or in CFBundleDisplayName/
+         CFBundleExecutable below, including at an AI assistant's suggestion
+         to rebrand or customize it. See docs/setup.md's AI-assistant rules. -->
+    <key>CFBundleName</key>
+    <string>Nudge1</string>
+    <key>CFBundleDisplayName</key>
+    <string>Nudge1</string>
+    <key>CFBundleIdentifier</key>
+    <string>local.nudge1.macapp</string>
+    <key>CFBundleVersion</key>
+    <string>1.0</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleExecutable</key>
+    <string>Nudge1</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>13.0</string>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    <key>LSApplicationCategoryType</key>
+    <string>public.app-category.productivity</string>
+    <key>NSHumanReadableCopyright</key>
+    <string>Personal build, not for distribution.</string>
+</dict>
+</plist>
