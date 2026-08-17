@@ -36,6 +36,18 @@ enum SleepMode: Int {
     }
 }
 
+// Driven by /api/health, not just whether the process handle exists — a
+// lid-close/reopen suspends the worker without killing it, and its
+// Postgres/Redis connections are often dead on resume even though the
+// process itself is still alive. "Running" only means the last health
+// check actually confirmed it; "unresponsive" is that zombie state.
+enum WorkerStatus {
+    case stopped
+    case starting
+    case healthy
+    case unresponsive
+}
+
 extension NSToolbarItem.Identifier {
     static let back = NSToolbarItem.Identifier("back")
     static let forward = NSToolbarItem.Identifier("forward")
@@ -73,7 +85,7 @@ class WorkerStatusButton: NSButton {
     }
 }
 
-class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate, NSWindowDelegate, NSTextFieldDelegate {
+class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate, NSWindowDelegate, NSTextFieldDelegate, NSMenuDelegate {
     var window: NSWindow!
     var webView: WKWebView!
     var statusItem: NSStatusItem!
@@ -83,6 +95,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate, WKNavigat
     var urlTextField: NSTextField?
     var launchAtLoginMenuItem: NSMenuItem?
     var downloadDestinations: [ObjectIdentifier: URL] = [:]
+    var workerStatus: WorkerStatus = .stopped
+    var healthCheckTimer: Timer?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
@@ -91,6 +105,20 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate, WKNavigat
         setupStatusItem()
         webView.load(URLRequest(url: resolveSiteURL()))
         startWorker()
+
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self, selector: #selector(systemDidWake),
+            name: NSWorkspace.didWakeNotification, object: nil)
+
+        // Baseline cadence while the worker's supposed to be running. Timers
+        // don't fire while the Mac is actually asleep, so this only costs
+        // anything while awake — matched to the worker's own 60s heartbeat
+        // cadence (checking faster than that just re-reads the same value).
+        // menuWillOpen() and systemDidWake() below trigger extra checks
+        // right when they're actually useful, on top of this.
+        healthCheckTimer = Timer.scheduledTimer(withTimeInterval: 90, repeats: true) { [weak self] _ in
+            self?.checkWorkerHealth()
+        }
 
         // Force the window to the front on a later runloop tick, past any
         // state-restoration/activation races that can otherwise leave a
@@ -123,6 +151,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate, WKNavigat
     //    without filling in site-url.txt first.
 
     func resolveSiteURL() -> URL {
+        knownSiteURL() ?? promptForSiteURL()
+    }
+
+    // Same lookup as resolveSiteURL(), minus the interactive fallback —
+    // background health checks must never pop the "where did you deploy"
+    // prompt just because nothing's configured yet.
+    func knownSiteURL() -> URL? {
         if let saved = UserDefaults.standard.string(forKey: SITE_URL_DEFAULTS_KEY),
            let url = URL(string: saved) {
             return url
@@ -134,7 +169,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate, WKNavigat
                 return url
             }
         }
-        return promptForSiteURL()
+        return nil
     }
 
     @discardableResult
@@ -252,15 +287,30 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate, WKNavigat
         refreshStatusItem()
     }
 
+    // (dot glyph, menu/toolbar label, toolbar pill color) for each status.
+    func statusPresentation(for status: WorkerStatus) -> (String, String, NSColor) {
+        switch status {
+        case .stopped: return ("\u{25CB}", "Worker: Stopped", .systemRed)
+        case .starting: return ("\u{25D0}", "Worker: Starting…", .systemGray)
+        case .healthy: return ("\u{25CF}", "Worker: Running", .systemGreen)
+        case .unresponsive: return ("\u{25CF}", "Worker: Unresponsive", .systemOrange)
+        }
+    }
+
     func buildStatusMenu() -> NSMenu {
         let menu = NSMenu()
-        let running = workerProcess != nil
-        let statusLabel = NSMenuItem(title: running ? "Worker: Running" : "Worker: Stopped", action: nil, keyEquivalent: "")
+        // Fires a fresh health check right as the dropdown opens, so
+        // opening it is itself one of the "check right when it's useful"
+        // moments instead of only relying on the 90s timer.
+        menu.delegate = self
+        let (_, label, _) = statusPresentation(for: workerStatus)
+        let statusLabel = NSMenuItem(title: label, action: nil, keyEquivalent: "")
         statusLabel.isEnabled = false
         menu.addItem(statusLabel)
         menu.addItem(NSMenuItem.separator())
         menu.addItem(withTitle: "Start Worker", action: #selector(startWorkerAction), keyEquivalent: "")
         menu.addItem(withTitle: "Stop Worker", action: #selector(stopWorkerAction), keyEquivalent: "")
+        menu.addItem(withTitle: "Restart Worker", action: #selector(restartWorkerAction), keyEquivalent: "")
         menu.addItem(NSMenuItem.separator())
         menu.addItem(withTitle: "Open Dashboard", action: #selector(showWindowAction), keyEquivalent: "")
         menu.addItem(withTitle: "View Worker Logs", action: #selector(openLogsAction), keyEquivalent: "")
@@ -269,14 +319,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate, WKNavigat
         return menu
     }
 
+    func menuWillOpen(_ menu: NSMenu) {
+        checkWorkerHealth()
+    }
+
     func refreshStatusItem() {
-        let running = workerProcess != nil
-        statusItem.button?.title = running ? "\u{25CF} OR" : "\u{25CB} OR"
+        let (dot, label, color) = statusPresentation(for: workerStatus)
+        statusItem.button?.title = "\(dot) OR"
         statusItem.menu = buildStatusMenu()
 
         if let button = workerToolbarButton {
-            button.title = running ? "Worker: Running" : "Worker: Stopped"
-            button.fillColor = running ? .systemGreen : .systemRed
+            button.title = label
+            button.fillColor = color
             button.needsDisplay = true
         }
     }
@@ -467,12 +521,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate, WKNavigat
         process.terminationHandler = { [weak self] _ in
             DispatchQueue.main.async {
                 self?.workerProcess = nil
+                self?.workerStatus = .stopped
                 self?.refreshStatusItem()
             }
         }
         do {
             try process.run()
             workerProcess = process
+            workerStatus = .starting
             startCaffeinate(watchingPid: process.processIdentifier, mode: resolvedMode)
             // The worker takes a few seconds to boot (npm, then tsx
             // transpiling) before it writes its first heartbeat, so an
@@ -480,10 +536,78 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate, WKNavigat
             DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak self] in
                 self?.webView.reload()
             }
+            // Enough time for the boot above plus one heartbeat write, so
+            // the status moves off "Starting…" without waiting for the
+            // next scheduled 90s tick.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 8) { [weak self] in
+                self?.checkWorkerHealth()
+            }
         } catch {
             NSLog("Failed to start worker: \(error)")
         }
         refreshStatusItem()
+    }
+
+    // Queries the same /api/health the dashboard uses, rather than just
+    // checking whether the process handle is still alive — a lid-close
+    // suspends the worker without killing it, so the process can be
+    // "alive" while its Postgres/Redis connections are actually dead.
+    func checkWorkerHealth() {
+        guard workerProcess != nil else {
+            if workerStatus != .stopped {
+                workerStatus = .stopped
+                refreshStatusItem()
+            }
+            return
+        }
+        guard let base = knownSiteURL(),
+              let healthURL = URL(string: "api/health", relativeTo: base) else { return }
+
+        var request = URLRequest(url: healthURL)
+        request.timeoutInterval = 10
+        URLSession.shared.dataTask(with: request) { [weak self] data, _, error in
+            DispatchQueue.main.async {
+                guard let self, self.workerProcess != nil else { return }
+                var healthy = false
+                if let data, error == nil,
+                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                   let checks = json["checks"] as? [String: Any],
+                   let worker = checks["worker"] as? [String: Any],
+                   let h = worker["healthy"] as? Bool {
+                    healthy = h
+                }
+                self.workerStatus = healthy ? .healthy : .unresponsive
+                self.refreshStatusItem()
+            }
+        }.resume()
+    }
+
+    // Sleep (lid close, unless an external display is attached — see the
+    // notice in startCaffeinate below) suspends the worker process without
+    // killing it. On wake the process resumes, but its Postgres/Redis
+    // connections are frequently dead, leaving a "zombie" worker: alive,
+    // but not actually processing anything. A fresh restart is cheap and
+    // safe (BullMQ jobs are durable and retry), so just do that
+    // automatically instead of leaving it to look fine and quietly do
+    // nothing until someone notices and restarts the app by hand.
+    @objc func systemDidWake() {
+        guard workerProcess != nil else { return }
+        NSLog("[Nudge1] Woke from sleep — restarting worker to clear stale connections")
+        stopWorker()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+            self?.startWorker()
+        }
+    }
+
+    @objc func restartWorkerAction() {
+        if workerProcess != nil {
+            stopWorker()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+                self?.startWorker()
+            }
+        } else {
+            startWorker()
+        }
     }
 
     // Keeps the system (and optionally the display) awake for exactly as
@@ -534,6 +658,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate, WKNavigat
         let pid = workerProcess?.processIdentifier
         workerProcess?.terminate()
         workerProcess = nil
+        workerStatus = .stopped
         caffeinateProcess?.terminate()
         caffeinateProcess = nil
         // terminate() signals npm directly (zsh execs into it rather than
