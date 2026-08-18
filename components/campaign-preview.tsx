@@ -324,7 +324,7 @@ function DmScreen({
         </span>
       </div>
 
-      <div className="flex-1 space-y-3 px-3 py-4">
+      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-3 py-4">
         {openingDmEnabled && (
           <>
             <div className="flex items-end gap-2">
