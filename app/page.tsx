@@ -474,7 +474,7 @@ export default async function Home() {
         </div>
       </header>
 
-      <section className="relative px-5 pb-24 pt-24 sm:px-6 sm:pt-32 lg:px-8">
+      <section className="relative px-5 pb-24 pt-12 sm:px-6 sm:pt-16 lg:px-8">
         <Glow className="left-1/2 top-0 h-[560px] w-[900px] -translate-x-1/2 opacity-60" />
 
         <div className="mx-auto max-w-3xl text-center">
