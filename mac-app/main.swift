@@ -139,6 +139,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate, WKNavigat
         false
     }
 
+    // Clicking the Dock icon is a separate path from the menu bar's "Open
+    // Dashboard" item (showWindowAction) — without this, a minimized window
+    // can be left stuck with no way back short of quitting and relaunching.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        showWindowAction()
+        return true
+    }
+
     // MARK: - Site URL
     //
     // Not hardcoded, because this app is meant to be built by anyone
@@ -485,6 +493,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate, WKNavigat
     @objc func forwardAction() { webView.goForward() }
 
     @objc func showWindowAction() {
+        // makeKeyAndOrderFront is supposed to implicitly deminiaturize a
+        // minimized window, but that's flaky in practice on some macOS
+        // versions — a minimized window can stay stuck even though this
+        // gets called. Deminiaturizing explicitly first is the reliable path.
+        if window.isMiniaturized {
+            window.deminiaturize(nil)
+        }
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
