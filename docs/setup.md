@@ -29,8 +29,6 @@ The web app and the worker must share the same `DATABASE_URL`, the same `REDIS_U
 
 You do not need to buy a domain. Deploying the web app to Vercel gives you a free public URL like `your-app.vercel.app`, and that URL is what everything else points at: `NEXTAUTH_URL`, the Meta OAuth redirect, and the Meta webhook callback all use it. If you want a custom domain later you can add one, but it is optional and you can launch without it.
 
-Worth knowing before you commit to Vercel's free Hobby tier: it's meant for personal, non-commercial use, and automating DMs for a business Instagram account arguably isn't that. Vercel doesn't usually catch it right away, but if they do it's an email asking you to upgrade to Pro or suspend the project, and that can land in the middle of a live campaign. If that risk isn't worth it to you, Vercel's Pro plan or a different host for the web app sidesteps the question entirely.
-
 If you name your Vercel project `nudge1` (as this guide has you do), don't expect to land on `nudge1.vercel.app` — that subdomain is shared globally across every Vercel account, so if someone else already has it, Vercel automatically appends a random word or hash instead, like `nudge1-rho.vercel.app`. This is normal and automatic; there is nothing to configure. Just use whatever URL Vercel actually gives you everywhere this guide says "your Vercel domain."
 
 Recommended split:
