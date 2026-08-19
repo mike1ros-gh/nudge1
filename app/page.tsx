@@ -483,7 +483,7 @@ export default async function Home() {
             Open source · Official Meta API
           </div>
 
-          <h1 className="mt-8 text-balance text-5xl font-semibold leading-[1.05] tracking-tight text-foreground sm:text-6xl lg:text-7xl">
+          <h1 className="mt-5 text-balance text-5xl font-semibold leading-[1.05] tracking-tight text-foreground sm:text-6xl lg:text-7xl">
             Make every comment
             <br />
             start the{" "}
