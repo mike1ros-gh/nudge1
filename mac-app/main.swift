@@ -575,8 +575,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate, WKNavigat
             }
             return
         }
+        // api/health/worker, not api/health — this one only reads the
+        // worker's Redis heartbeat, no Postgres query, so polling it this
+        // often never touches Neon's metered compute hours at all.
         guard let base = knownSiteURL(),
-              let healthURL = URL(string: "api/health", relativeTo: base) else { return }
+              let healthURL = URL(string: "api/health/worker", relativeTo: base) else { return }
 
         var request = URLRequest(url: healthURL)
         request.timeoutInterval = 10
@@ -586,9 +589,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate, WKNavigat
                 var healthy = false
                 if let data, error == nil,
                    let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                   let checks = json["checks"] as? [String: Any],
-                   let worker = checks["worker"] as? [String: Any],
-                   let h = worker["healthy"] as? Bool {
+                   let h = json["healthy"] as? Bool {
                     healthy = h
                 }
                 self.workerStatus = healthy ? .healthy : .unresponsive
