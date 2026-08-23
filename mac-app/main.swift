@@ -97,6 +97,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate, WKNavigat
     var downloadDestinations: [ObjectIdentifier: URL] = [:]
     var workerStatus: WorkerStatus = .stopped
     var healthCheckTimer: Timer?
+    var pageLoadRetryCount = 0
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
@@ -698,6 +699,33 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate, WKNavigat
 
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
         decisionHandler(.allow)
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        pageLoadRetryCount = 0
+    }
+
+    // A page load launched right at boot/login, before Wi-Fi has
+    // reconnected, fails silently and previously just stayed blank forever
+    // — nothing else ever retried it. Retry a few times with a short
+    // delay, which is normally more than enough for the network to come
+    // back; if it's still failing after that, something else is wrong and
+    // hammering retries isn't productive, so stop and leave the existing
+    // manual Reload button as the way out.
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        retryPageLoadIfNeeded()
+    }
+
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        retryPageLoadIfNeeded()
+    }
+
+    func retryPageLoadIfNeeded() {
+        guard pageLoadRetryCount < 5, let url = knownSiteURL() else { return }
+        pageLoadRetryCount += 1
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+            self?.webView.load(URLRequest(url: url))
+        }
     }
 
     // WKWebView has no download support at all unless the app opts a
