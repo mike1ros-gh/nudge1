@@ -479,7 +479,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate, WKNavigat
             }
         }
     }
-    @objc func reloadAction() { webView.reload() }
+    // reloadFromOrigin bypasses the cache entirely, unlike plain reload()
+    // which can reuse a stale cached page shell — worth doing on every
+    // manual reload given how often this app gets redeployed.
+    @objc func reloadAction() { webView.reloadFromOrigin() }
 
     @objc func loadURLFromField() {
         guard let text = urlTextField?.stringValue.trimmingCharacters(in: .whitespacesAndNewlines),
